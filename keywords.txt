@@ -1,0 +1,53 @@
+# Datatypes (KEYWORD1)
+
+XpressNetMasterClass				KEYWORD1
+
+
+# Methods and Functions (KEYWORD2)
+
+setup					KEYWORD2
+update					KEYWORD2
+setPower				KEYWORD2
+
+SetLocoInfo				KEYWORD2
+SetLocoInfoMM				KEYWORD2
+SetFktStatus				KEYWORD2
+SetTrntStatus				KEYWORD2
+
+notifyXNetPower				KEYWORD2
+getPowerState				KEYWORD2
+
+notifyXNetgiveLocoInfo			KEYWORD2
+notifyXNetgiveLocoMM			KEYWORD2
+notifyXNetLocoDrive14			KEYWORD2
+notifyXNetLocoDrive27			KEYWORD2
+notifyXNetLocoDrive28			KEYWORD2
+notifyXNetLocoDrive128			KEYWORD2
+
+notifyXNetgiveLocoFunc			KEYWORD2
+notifyXNetLocoFunc1			KEYWORD2
+notifyXNetLocoFunc2			KEYWORD2
+notifyXNetLocoFunc3			KEYWORD2
+notifyXNetLocoFunc4			KEYWORD2
+notifyXNetLocoFunc5			KEYWORD2
+
+notifyXNetTrntInfo			KEYWORD2
+notifyXNetTrnt				KEYWORD2
+
+notifyXNetDirectCV			KEYWORD2
+notifyXNetDirectReadCV			KEYWORD2
+notifyXNetPOMwriteByte			KEYWORD2
+notifyXNetPOMwriteBit			KEYWORD2
+
+# Constants (LITERAL1)
+
+csNormal				LITERAL1
+csEmergencyStop				LITERAL1
+csTrackVoltageOff			LITERAL1
+csShortCircuit				LITERAL1
+csServiceMode				LITERAL1
+
+Loco14					LITERAL1
+Loco27					LITERAL1
+Loco28					LITERAL1
+Loco128					LITERAL1
