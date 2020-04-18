@@ -3,7 +3,6 @@
   *		XpressNetMaster.h - library for XpressNet protocoll
   *		Copyright (c) 08/2016 - 2020 Philipp Gahtow  All right reserved.
   *
-  *		Version 2.7.0
 *****************************************************************************
   * FUNKTIONS:
   *
@@ -741,8 +740,8 @@ void XpressNetMasterClass::ReqLocoBusy(uint16_t Adr) {
 //Lok in use (Busy)
 void XpressNetMasterClass::SetLocoBusy(uint8_t UserOps, uint16_t Adr) {
 	uint8_t LocoInfo[] = { UserOps, 0xE3, 0x40, 0x00, 0x00, 0x00 };
-	if (Adr > 100) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
-		LocoInfo[3] = (Adr >> 8) & 0xC0;
+	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
+		LocoInfo[3] = (Adr >> 8) | 0xC0;
 	else LocoInfo[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
 	LocoInfo[4] = Adr & 0xFF;
 	getXOR(LocoInfo, 6);
@@ -794,8 +793,8 @@ void XpressNetMasterClass::setSpeed(uint16_t Adr, uint8_t Steps, uint8_t Speed) 
 		case 27: LocoInfo[2] = 0x11; break;
 		case 28: LocoInfo[2] = 0x12; break;
 	}
-	if (Adr > 100) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
-		LocoInfo[3] = (Adr >> 8) & 0xC0;
+	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
+		LocoInfo[3] = (Adr >> 8) | 0xC0;
 	else LocoInfo[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
 	LocoInfo[4] = Adr & 0xFF;
 	getXOR(LocoInfo, 7);
@@ -806,8 +805,8 @@ void XpressNetMasterClass::setSpeed(uint16_t Adr, uint8_t Steps, uint8_t Speed) 
 //Gruppe 1: 0 0 0 F0 F4 F3 F2 F1
 void XpressNetMasterClass::setFunc0to4(uint16_t Adr, uint8_t G1) { 
 	uint8_t LocoInfo[] = {0x00, 0xE4, 0x20, 0x00, 0x00, G1, 0x00 };
-	if (Adr > 100) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
-		LocoInfo[3] = (Adr >> 8) & 0xC0;
+	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
+		LocoInfo[3] = (Adr >> 8) | 0xC0;
 	else LocoInfo[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
 	LocoInfo[4] = Adr & 0xFF;
 	getXOR(LocoInfo, 7);
@@ -818,8 +817,8 @@ void XpressNetMasterClass::setFunc0to4(uint16_t Adr, uint8_t G1) {
 //Gruppe 2: 0 0 0 0 F8 F7 F6 F5 
 void XpressNetMasterClass::setFunc5to8(uint16_t Adr, uint8_t G2) { 
 	uint8_t LocoInfo[] = {0x00, 0xE4, 0x21, 0x00, 0x00, G2, 0x00 };
-	if (Adr > 100) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
-		LocoInfo[3] = (Adr >> 8) & 0xC0;
+	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
+		LocoInfo[3] = (Adr >> 8) | 0xC0;
 	else LocoInfo[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
 	LocoInfo[4] = Adr & 0xFF;
 	getXOR(LocoInfo, 7);
@@ -830,8 +829,8 @@ void XpressNetMasterClass::setFunc5to8(uint16_t Adr, uint8_t G2) {
 //Gruppe 3: 0 0 0 0 F12 F11 F10 F9 
 void XpressNetMasterClass::setFunc9to12(uint16_t Adr, uint8_t G3) { 
 	uint8_t LocoInfo[] = {0x00, 0xE4, 0x22, 0x00, 0x00, G3, 0x00 };
-	if (Adr > 100) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
-		LocoInfo[3] = (Adr >> 8) & 0xC0;
+	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
+		LocoInfo[3] = (Adr >> 8) | 0xC0;
 	else LocoInfo[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
 	LocoInfo[4] = Adr & 0xFF;
 	getXOR(LocoInfo, 7);
@@ -842,8 +841,8 @@ void XpressNetMasterClass::setFunc9to12(uint16_t Adr, uint8_t G3) {
 //Gruppe 4: F20 F19 F18 F17 F16 F15 F14 F13  
 void XpressNetMasterClass::setFunc13to20(uint16_t Adr, uint8_t G4) { 
 	uint8_t LocoInfoMM[] = {0x00, 0xE4, 0xF3, 0x00, 0x00, G4, 0x00 };	//normal: 0x23!
-	if (Adr > 100) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
-		LocoInfoMM[3] = (Adr >> 8) & 0xC0;
+	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
+		LocoInfoMM[3] = (Adr >> 8) | 0xC0;
 	else LocoInfoMM[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
 	LocoInfoMM[4] = Adr & 0xFF;
 	getXOR(LocoInfoMM, 7);
@@ -863,8 +862,8 @@ void XpressNetMasterClass::setFunc13to20(uint16_t Adr, uint8_t G4) {
 //Gruppe 5: F28 F27 F26 F25 F24 F23 F22 F21  
 void XpressNetMasterClass::setFunc21to28(uint16_t Adr, uint8_t G5) { 
 	uint8_t LocoInfo[] = {0x00, 0xE4, 0x28, 0x00, 0x00, G5, 0x00 };
-	if (Adr > 100) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
-		LocoInfo[3] = (Adr >> 8) & 0xC0;
+	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
+		LocoInfo[3] = (Adr >> 8) | 0xC0;
 	else LocoInfo[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
 	LocoInfo[4] = Adr & 0xFF;
 	getXOR(LocoInfo, 7);

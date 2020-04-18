@@ -2,8 +2,6 @@
   XpressNetMaster.h - library for XpressNet Master protocoll
   Copyright (c) 2020 Philipp Gahtow  All right reserved.
 
-  Version 2.7.0
-
   Notice:
   Support for XPressNet Version 3.0 or 3.6!
 
