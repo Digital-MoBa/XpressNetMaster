@@ -20,11 +20,15 @@
 	- add feedback return to all clients
 	- add POM write byte and bit
 	- fix slave ack return
-	- add support ARM (Arduino DUE) with soft_uart
+	- add support for RAW Data in-/output
 	- add inside 'AddBusySlot' a skip if already busy by this slot
 	- adjust init client mode power setting
 	- add support ESP8266 with RS485SoftwareSerial
 	- fix sending long Adresses missing the two highest bits of the High bytes are set to "1" (0xC000)
+	- fix hanging in CV-Prog
+	- fix Accessory Decoder operation request Byte 2
+	- fix Locomotive speed and direction operation (0xE4) Speed Steps
+	- fix range CV# Adr to uint16_t
 */
 
 // ensure this library description is only included once
@@ -58,39 +62,19 @@
 #define SERIAL_PORT_1
 #undef SERIAL_PORT_0
 
-#elif defined(ARDUINO_ESP8266_ESP01) //ESP8266
-#include <RS485SoftwareSerial.h>
-// define RS485 TX pin
-#ifndef XNetRS485_TX
-#define XNetRS485_TX 4
-#endif
-// define RS485 RX pin
-#ifndef XNetRS485_RX
-#define XNetRS485_RX 2
-#endif
-//remove AVR statements:
-#undef SERIAL_PORT_0
-#undef SERIAL_PORT_1
-
-#elif defined(ARDUINO_ESP8266_WEMOS_D1MINI) //WeMos
-#include <RS485SoftwareSerial.h>
-// define RS485 TX pin
-#ifndef XNetRS485_TX
-#define XNetRS485_TX 2
-#endif
-// define RS485 RX pin
-#ifndef XNetRS485_RX
-#define XNetRS485_RX 0
-#endif
-//remove AVR statements:
-#undef SERIAL_PORT_0
-#undef SERIAL_PORT_1
-
-
 #else //others Arduino UNO
 #define SERIAL_PORT_0
 #undef SERIAL_PORT_1
 #endif
+
+//--------------------------------------------------------------------------------------------
+
+#if defined(ESP32) || defined(ESP8266)
+//#define RAW_DATA_MODE_ESP	//to use with Software Serial RS485 Library
+#define RAW_DATA_MODE		//kein Serial Interface - use external communication!
+#endif
+#define RAW_DATA_OUT	//Ausgabe RAW Daten Empfang auf dem XpressNet Bus
+#define RAW_DATA_IN		//Senden RAW Daten auf den XpressNet Bus
 
 //--------------------------------------------------------------------------------------------
 //only for Debug:
@@ -109,11 +93,7 @@ difference is to provide a design tolerance between the different types of devic
 Under normal conditions an XpressNet device must be designed to be able to handle the receipt of its 
 next transmission window between 400 microseconds and 500 milliseconds after the receipt of the last window.  */
 
-#if defined(__SAM3X8E__)
-#define XNetTimeReadData 10000	//max time to wait until paket is finish with correct XOR
-#else
 #define XNetTimeReadData 6000	//max time to wait until paket is finish with correct XOR
-#endif
 
 //XpressNet Send Buffer length:	
 #define XNetBufferSize 5	//max Data Pakets (max: 4 Bit = 16!)
@@ -123,10 +103,10 @@ next transmission window between 400 microseconds and 500 milliseconds after the
 #define XNetSlaveCycle 0xFF	//max (255) cycles to Stay in SLAVE MODE when no CallByte is received
 
 //Fahrstufen:
-#define Loco14 0x00
-#define Loco27 0x01
-#define Loco28 0x02
-#define Loco128 0x04
+#define Loco14 0x00		//FFF = 000 = 14 speed step
+#define Loco27 0x01		//FFF = 001 = 27 speed step
+#define Loco28 0x02		//FFF = 010 = 28 speed step
+#define Loco128 0x04	//FFF = 100 = 128 speed step
 
 // XPressnet Call Bytes.
 // broadcast to everyone, we save the incoming data and process it later.
@@ -174,8 +154,11 @@ class XpressNetMasterClass
   public:
     XpressNetMasterClass(void);	//Constuctor
 	void setup(uint8_t FStufen, uint8_t XControl);  //Initialisierung Serial
-	#if defined(__SAM3X8E__)
-	void DUE_serial_read(unsigned int data);
+	#if defined(RAW_DATA_MODE)
+	void RAW_input(byte *dataString, byte byteCount);
+	#endif
+	#if defined(RAW_DATA_IN)
+	void RAW_in(byte *dataString, byte lenCount);
 	#endif
 	void update(void);  			//Set new Data on the Dataline
 
@@ -251,10 +234,10 @@ class XpressNetMasterClass
 	void XNetReceive(void);	//Speichern der eingelesenen Daten
 	bool XNetDataReady;		//Daten Fertig empfangen!
 	
-	uint8_t XNetCVAdr;		//CV Adr that was read
+	uint16_t XNetCVAdr;		//CV Adr that was read
 	uint8_t XNetCVvalue;	//read CV Value 
 	
-	#if defined(ARDUINO_ESP8266_ESP01) || defined(ARDUINO_ESP8266_WEMOS_D1MINI)
+	#if defined(RAW_DATA_MODE_ESP)
 	RS485SoftwareSerial rs485;
 	#endif
 };
@@ -262,8 +245,11 @@ class XpressNetMasterClass
 #if defined (__cplusplus)
 	extern "C" {
 #endif
-	#if defined(__SAM3X8E__)
-	extern void XpressNet_DUE_send(uint32_t data) __attribute__((weak));
+	#if defined(RAW_DATA_MODE)
+	extern void RAW_output(byte *dataString, byte byteCount) __attribute__((weak));
+	#endif
+	#if defined(RAW_DATA_OUT)
+	extern void RAW_out(byte *dataString, byte byteCount) __attribute__((weak));
 	#endif
 	extern void notifyXNetPower(uint8_t State) __attribute__((weak));
 	extern uint8_t getPowerState() __attribute__((weak));	//give Back Actual Power State
@@ -286,8 +272,8 @@ class XpressNetMasterClass
 	//Rückmeldung:
 	extern void notifyXNetFeedback(uint16_t Address, uint8_t data) __attribute__((weak));// data=0000 000A	A=Weichenausgang (Aktive/Inaktive);
 	//CV:
-	extern void notifyXNetDirectCV(uint8_t CV, uint8_t data) __attribute__((weak));
-	extern void notifyXNetDirectReadCV(uint8_t cvAdr) __attribute__((weak));
+	extern void notifyXNetDirectCV(uint16_t CV, uint8_t data) __attribute__((weak));
+	extern void notifyXNetDirectReadCV(uint16_t cvAdr) __attribute__((weak));
 	//POM:
 	extern void notifyXNetPOMwriteByte (uint16_t Adr, uint16_t CV, uint8_t data) __attribute__((weak));
 	extern void notifyXNetPOMwriteBit (uint16_t Adr, uint16_t CV, uint8_t data) __attribute__((weak));
