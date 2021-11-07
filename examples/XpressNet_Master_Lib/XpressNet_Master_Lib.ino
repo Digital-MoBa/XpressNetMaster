@@ -6,17 +6,30 @@
 #include <XpressNetMaster.h>
 XpressNetMasterClass XpressNet;
 
+byte Mode = 0xFF;
+
 void setup() {
   Serial.begin(115200);
-  Serial.println("XPressNet Master");
+  Serial.println("XPressNet Library");
 
   XpressNet.setup(Loco128, 9);    //Initialisierung XNet Serial und Send/Receive-PIN  
+  
+  //Optional für Slave-Mode only!
+  //XpressNet.setup(Loco128, 9, false);    //Initialisierung XNet Serial und Send/Receive-PIN  
   
 }
 
 void loop() {
   
  XpressNet.update();	//call in every loop
+
+ if (Mode != XpressNet.getOperationModeMaster()) {
+    Mode = XpressNet.getOperationModeMaster();
+    if (Mode == 1)
+      Serial.println("XpressNet Master");
+	if (Mode == 0
+	  Serial.println("XpressNet Slave");  
+ }
  
 }
 
@@ -33,7 +46,7 @@ void notifyXNetgiveLocoFunc(uint8_t UserOps, uint16_t Address) {
 void notifyXNetPower(uint8_t State) {
   Serial.print("Power: ");
   Serial.println(State, HEX);
-  XpressNet.setPower(State);
+  //XpressNet.setPower(State);
 }
 
 //--------------------------------------------------------------
@@ -122,4 +135,3 @@ void notifyXNetTrntInfo(uint8_t UserOps, uint8_t Address, uint8_t data) {
 */  
   XpressNet.SetTrntStatus(UserOps, Address, pos);
 }
-
