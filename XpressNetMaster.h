@@ -34,6 +34,7 @@
 	- add request for operation Mode if Mode is set to AUTO
 	- add a buffer for RX data and change XSend to XBuffer and seperate it between RX and TX.
 	- add new request function in Slave-Mode for lok information
+	- fix RX buffer, use only in Slave-Mode
 */
 
 // ensure this library description is only included once
@@ -86,7 +87,7 @@
 
 
 //--------------------------------------------------------------------------------------------
-#define XNetTimeUntilNext 500	//value in microseconds until the next transmission windows starts!
+#define XNetTimeUntilNext 550	//value in microseconds until the next transmission windows starts!
 /*An XpressNet device designed to work with XpressNet V3 and later systems must be designed so that it 
 begins its transmission within 110 microseconds of receiving its transmission window.  (older X-Bus 
 based systems required this transmission to begin with in 40 microseconds.)  Command stations must be 
@@ -95,10 +96,12 @@ difference is to provide a design tolerance between the different types of devic
 Under normal conditions an XpressNet device must be designed to be able to handle the receipt of its 
 next transmission window between 400 microseconds and 500 milliseconds after the receipt of the last window.  */
 
+#define XNetTimeReadData 500	//max time to wait until paket is finish with correct XOR
+
 //XpressNet Send Buffer length:	
-#define XNetTXBufferSize 5	//max Data Pakets (max: 4 Bit = 16!)
+#define XNetTXBufferSize 5	//max Data Pakets (max: 4x = 16 Bytes!)
 //XpressNet Receive Buffer length:	
-#define XNetRXBufferSize 5	//max Data Pakets (max: 4 Bit = 16!)
+#define XNetRXBufferSize 5	//max Data Pakets (max: 4x = 16 Bytes!)
 
 
 //XpressNet Mode (Master/Slave)
@@ -126,9 +129,10 @@ next transmission window between 400 microseconds and 500 milliseconds after the
 #define csServiceMode 0x08 // Der Programmiermodus ist aktiv - Service Mode
 
 #define XNet_get_callbyte  0	//prepare next client
-#define XNet_send_data 1	//Warten bis zum Ende - SendBuffer leeren!
-#define XNet_SendReady 2	//Senden der Daten beendet!
+#define XNet_send_callbyte 1	//wait until send out data for next client
+#define XNet_wait_receive 2	//wait for client answer, max 120 microsekunden
 #define XNet_receive_data 3	//read client data, max 500ms
+#define XNet_send_data 4
 
 //XpressNet Befehl, jedes gesendete Byte
 #define XNetMaxDataLength 10
@@ -202,11 +206,15 @@ class XpressNetMasterClass
 	byte MAX485_CONTROL; //Port for send or receive control
 	uint8_t XNetAdr;	//Adresse des Abzufragenden XNet Device
 	unsigned long XSendCount;	//Zeit: Call Byte ausgesendet
-	//byte XNetMsgCallByte;	//Received CallByte for Msg
+
 	//byte XNetMsg[XNetMaxDataLength];	//Serial receive (Length, Header, Data1 to Data7)
+	
 	byte XNetMsgAnalysePos;	//Position im Buffer beim Auswerten/Analysieren!
 	byte XNetMsgIntPos;		//Position im Buffer zum Einlesen!
 	byte XNetMsgBuffer[XNetRXBufferSize][XNetMaxDataLength + 2];	//Länge + CallByte + Read Buffer (Data)
+	
+	byte XNetMsgCallByte;	//Received CallByte for Msg
+	byte XNetMsgRX[XNetMaxDataLength+1]; //Read Buffer
 
 	byte callByteParity (byte me);	// calculate the parity bit
 	uint8_t CallByteInquiry;
@@ -236,6 +244,8 @@ class XpressNetMasterClass
 	void getXOR (uint8_t *data, byte length); // calculate the XOR
 	void XNetSendNext(void);	//Sendet Daten aus dem Buffer mittels Interrupt
 	void XNetReceive(void);	//Speichern der eingelesenen Daten
+	
+	//bool XNetDataReady;		//Daten Fertig empfangen!
 	
 	uint16_t XNetCVAdr;		//CV Adr that was read
 	uint8_t XNetCVvalue;	//read CV Value 
