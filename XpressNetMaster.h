@@ -1,6 +1,6 @@
 /*
   XpressNetMaster.h - library for XpressNet Master protocoll
-  Copyright (c) 2021 Philipp Gahtow  All right reserved.
+  Copyright (c) 2020 Philipp Gahtow  All right reserved.
 
   Notice:
   Support for XPressNet Version 3.0 or 3.6!
@@ -29,12 +29,6 @@
 	- fix Accessory Decoder operation request Byte 2
 	- fix Locomotive speed and direction operation (0xE4) Speed Steps
 	- fix range CV# Adr to uint16_t
-	- fix Slave Mode operation
-	- add into XpressNet.setup() the option to work only in Slave-Mode
-	- add request for operation Mode if Mode is set to AUTO
-	- add a buffer for RX data and change XSend to XBuffer and seperate it between RX and TX.
-	- add new request function in Slave-Mode for lok information
-	- fix RX buffer, use only in Slave-Mode
 */
 
 // ensure this library description is only included once
@@ -43,12 +37,11 @@
 
 //CONFIG:
 #define XNetVersion 0x36	//System Bus Version
-#define XNetID 0x13	//Zentrale: Z21start (Roco)
+#define XNetID 0x10	//Zentrale: 
 //0x00 = LZ100; 
 //0x01 = LH200; 
 //0x10 = ROCO MultiMaus; 
 //0x02 = other; 
-//0x13 = Z21;
 
 // include types & constants of Wiring core API
 #if defined(WIRING)
@@ -80,7 +73,7 @@
 #endif
 */
 //--------------------------------------------------------------------------------------------
-//only for Development Debug:
+//only for Debug:
 //#define XNetSerial Serial	//Debugging Serial
 //#define XNetDEBUG		//Put out the messages
 //#define XNetDEBUGTime	//Put out the microseconds
@@ -96,13 +89,11 @@ difference is to provide a design tolerance between the different types of devic
 Under normal conditions an XpressNet device must be designed to be able to handle the receipt of its 
 next transmission window between 400 microseconds and 500 milliseconds after the receipt of the last window.  */
 
-#define XNetTimeReadData 500	//max time to wait until paket is finish with correct XOR
+#define XNetTimeReadData 6000	//max time to wait until paket is finish with correct XOR
 
 //XpressNet Send Buffer length:	
-#define XNetTXBufferSize 5	//max Data Pakets (max: 4x = 16 Bytes!)
-//XpressNet Receive Buffer length:	
-#define XNetRXBufferSize 5	//max Data Pakets (max: 4x = 16 Bytes!)
-
+#define XNetBufferSize 5	//max Data Pakets (max: 4 Bit = 16!)
+#define XNetBufferMaxData 10		//max Bytes for each Paket (max: 15!)
 
 //XpressNet Mode (Master/Slave)
 #define XNetSlaveCycle 0xFF	//max (255) cycles to Stay in SLAVE MODE when no CallByte is received
@@ -135,23 +126,22 @@ next transmission window between 400 microseconds and 500 milliseconds after the
 #define XNet_send_data 4
 
 //XpressNet Befehl, jedes gesendete Byte
-#define XNetMaxDataLength 10
+#define XNetMaxDataLength 8
 #define XNetBufferlength 0	//Read Buffer length
-#define XNetCallByte	1		//Message Call Byte
-#define XNetheader	2		//Messageheader
-#define XNetdata1	3		//Databyte1
-#define XNetdata2	4		//Databyte2
-#define XNetdata3	5		//Databyte3
-#define XNetdata4	6		//Databyte4
-#define XNetdata5	7		//Databyte5
-#define XNetdata6	8		//Databyte6
-#define XNetdata7	9		//Databyte7 (MultiMaus Status Feedback)
+#define XNetheader	0		//Messageheader
+#define XNetdata1	1		//Databyte1
+#define XNetdata2	2		//Databyte2
+#define XNetdata3	3		//Databyte3
+#define XNetdata4	4		//Databyte4
+#define XNetdata5	5		//Databyte5
+#define XNetdata6	6		//Databyte6
+#define XNetdata7	7		//Databyte7
 
 typedef struct	//Antwort/Abfragespeicher
 {
 	byte length;			//Speicher für Datenlänge
-	byte data[XNetMaxDataLength];	//zu sendende Daten
-} XBuffer;
+	byte data[XNetBufferMaxData];	//zu sendende Daten
+} XSend;
 
 // library interface description
 class XpressNetMasterClass
@@ -200,31 +190,25 @@ class XpressNetMasterClass
 	byte XNet_state; //single state machine
 	bool XModeAuto;		//ON = Automatische Umschaltung Master/Slave-Mode; OFF = Slave Mode only
 	uint8_t XNetSlaveMode;	// > 0 then we are working in SLAVE MODE
-	bool XNetSlaveInit;	//send initialize sequence
+	uint8_t XNetSlaveInit;	//send initialize sequence
 	byte Railpower;		//Data of the actual Power State
 	byte Fahrstufe;	//Standard für Fahrstufe
 	byte MAX485_CONTROL; //Port for send or receive control
 	uint8_t XNetAdr;	//Adresse des Abzufragenden XNet Device
 	unsigned long XSendCount;	//Zeit: Call Byte ausgesendet
-
-	//byte XNetMsg[XNetMaxDataLength];	//Serial receive (Length, Header, Data1 to Data7)
-	
-	byte XNetMsgAnalysePos;	//Position im Buffer beim Auswerten/Analysieren!
-	byte XNetMsgIntPos;		//Position im Buffer zum Einlesen!
-	byte XNetMsgBuffer[XNetRXBufferSize][XNetMaxDataLength + 2];	//Länge + CallByte + Read Buffer (Data)
-	
 	byte XNetMsgCallByte;	//Received CallByte for Msg
-	byte XNetMsgRX[XNetMaxDataLength+1]; //Read Buffer
+	byte XNetMsg[XNetMaxDataLength];	//Serial receive (Length, Header, Data1 to Data7)
+	byte XNetMsgBuffer[XNetMaxDataLength + 1];	//Read Buffer
 
 	byte callByteParity (byte me);	// calculate the parity bit
 	uint8_t CallByteInquiry;
 	uint8_t RequestAck;
-	uint8_t DirectedOps;		
+	uint8_t DirectedOps;
 
 	uint16_t SlotLokUse[32];	//store loco to DirectedOps
 	void SetBusy(uint8_t Slot);	//send busy message to slot that doesn't use
 	void AddBusySlot(uint8_t UserOps, uint16_t Adr);	//add loco to slot
-	//void XNetclear(void);	//Clear a old Message
+	void XNetclear(void);	//Clear a old Message
 
 		//Functions:
 	void unknown(void);		//unbekannte Anfrage
@@ -234,7 +218,7 @@ class XpressNetMasterClass
 	
 		//Serial send and receive:
 	static XpressNetMasterClass *active_object;	//aktuelle aktive Object for interrupt handler	
-	XBuffer XNetSendBuffer[XNetTXBufferSize];		//Sendbuffer for data that needs to send out
+	XSend XNetBuffer[XNetBufferSize];		//Sendbuffer for data that needs to send out
 	byte XNetBufferSend;	//position to read next data
 	byte XNetBufferSend_data;	//position of byte we are sending
 	byte XNetBufferStore;	//position to store the next data
@@ -244,8 +228,7 @@ class XpressNetMasterClass
 	void getXOR (uint8_t *data, byte length); // calculate the XOR
 	void XNetSendNext(void);	//Sendet Daten aus dem Buffer mittels Interrupt
 	void XNetReceive(void);	//Speichern der eingelesenen Daten
-	
-	//bool XNetDataReady;		//Daten Fertig empfangen!
+	bool XNetDataReady;		//Daten Fertig empfangen!
 	
 	uint16_t XNetCVAdr;		//CV Adr that was read
 	uint8_t XNetCVvalue;	//read CV Value 
