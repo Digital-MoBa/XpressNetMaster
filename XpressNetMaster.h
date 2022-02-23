@@ -1,6 +1,6 @@
 /*
   XpressNetMaster.h - library for XpressNet Master protocoll
-  Copyright (c) 2020 Philipp Gahtow  All right reserved.
+  Copyright (c) 2022 Philipp Gahtow  All right reserved.
 
   Notice:
   Support for XPressNet Version 3.0 or 3.6!
@@ -29,6 +29,7 @@
 	- fix Accessory Decoder operation request Byte 2
 	- fix Locomotive speed and direction operation (0xE4) Speed Steps
 	- fix range CV# Adr to uint16_t
+	- add software serial support for ESP8266 and ESP32
 */
 
 // ensure this library description is only included once
@@ -68,11 +69,6 @@
 #endif
 
 //--------------------------------------------------------------------------------------------
-/*
-#if defined(ESP32) 
-#endif
-*/
-//--------------------------------------------------------------------------------------------
 //only for Debug:
 //#define XNetSerial Serial	//Debugging Serial
 //#define XNetDEBUG		//Put out the messages
@@ -89,11 +85,14 @@ difference is to provide a design tolerance between the different types of devic
 Under normal conditions an XpressNet device must be designed to be able to handle the receipt of its 
 next transmission window between 400 microseconds and 500 milliseconds after the receipt of the last window.  */
 
-#define XNetTimeReadData 6000	//max time to wait until paket is finish with correct XOR
+#if defined(ESP8266) || defined(ESP32)
+#define XNetTransmissionWindow 3000	//wait longer = slower, because software serial interrupt
+#else
+#define XNetTransmissionWindow 500	//max time to wait until data will be received
+#endif
 
-//XpressNet Send Buffer length:	
+//XpressNet Buffer length (send and receive):	
 #define XNetBufferSize 5	//max Data Pakets (max: 4 Bit = 16!)
-#define XNetBufferMaxData 10		//max Bytes for each Paket (max: 15!)
 
 //XpressNet Mode (Master/Slave)
 #define XNetSlaveCycle 0xFF	//max (255) cycles to Stay in SLAVE MODE when no CallByte is received
@@ -119,29 +118,33 @@ next transmission window between 400 microseconds and 500 milliseconds after the
 #define csShortCircuit 0x04 // Kurzschluss
 #define csServiceMode 0x08 // Der Programmiermodus ist aktiv - Service Mode
 
-#define XNet_get_callbyte  0	//prepare next client
-#define XNet_send_callbyte 1	//wait until send out data for next client
-#define XNet_wait_receive 2	//wait for client answer, max 120 microsekunden
-#define XNet_receive_data 3	//read client data, max 500ms
-#define XNet_send_data 4
+//XpressNet Befehl, with max. 7 data bytes!
+#define XNetCallByte 0		//CallByte
+#define XNetheader	1		//Header
+#define XNetdata1	2		//Databyte1
+#define XNetdata2	3		//Databyte2
+#define XNetdata3	4		//Databyte3
+#define XNetdata4	5		//Databyte4
+#define XNetdata5	6		//Databyte5
+#define XNetdata6	7		//Databyte6
+#define XNetdata7	8		//Databyte7
+#define XNetCRC		9		//Checksumme
 
-//XpressNet Befehl, jedes gesendete Byte
-#define XNetMaxDataLength 8
-#define XNetBufferlength 0	//Read Buffer length
-#define XNetheader	0		//Messageheader
-#define XNetdata1	1		//Databyte1
-#define XNetdata2	2		//Databyte2
-#define XNetdata3	3		//Databyte3
-#define XNetdata4	4		//Databyte4
-#define XNetdata5	5		//Databyte5
-#define XNetdata6	6		//Databyte6
-#define XNetdata7	7		//Databyte7
+#define XNetBufferMaxData 10		//max Bytes over all for each Paket
 
-typedef struct	//Antwort/Abfragespeicher
+typedef struct	//Msg Seicher
 {
-	byte length;			//Speicher für Datenlänge
-	byte data[XNetBufferMaxData];	//zu sendende Daten
-} XSend;
+	uint8_t length;			//Speicher für Datenlänge
+	uint8_t data[XNetBufferMaxData];	//zu sendende Daten
+} XNetMessage;
+
+typedef struct	//Buffer
+{
+	XNetMessage msg[XNetBufferSize];
+	uint8_t get;	//position we are with reading
+	uint8_t put;	//position we are with writing
+	uint8_t pos;	//byte position for write
+} XNetBuffer;
 
 // library interface description
 class XpressNetMasterClass
@@ -149,7 +152,11 @@ class XpressNetMasterClass
   // user-accessible "public" interface
   public:
     XpressNetMasterClass(void);	//Constuctor
+	#if defined(ESP8266) || defined(ESP32)
+	void setup(uint8_t FStufen, uint8_t XNetPort, uint8_t XControl, bool XnModeAuto = true);  //Initialisierung Serial
+	#else
 	void setup(uint8_t FStufen, uint8_t XControl, bool XnModeAuto = true);  //Initialisierung Serial
+	#endif
 	void update(void);  			//Set new Data on the Dataline
 	
 	bool getOperationModeMaster(void);	//gibt TRUE zurück wenn aktuelle Master Mode aktiv ist!
@@ -187,7 +194,6 @@ class XpressNetMasterClass
   // library-accessible "private" interface
   private:
 	  //Variables:
-	byte XNet_state; //single state machine
 	bool XModeAuto;		//ON = Automatische Umschaltung Master/Slave-Mode; OFF = Slave Mode only
 	uint8_t XNetSlaveMode;	// > 0 then we are working in SLAVE MODE
 	uint8_t XNetSlaveInit;	//send initialize sequence
@@ -195,10 +201,9 @@ class XpressNetMasterClass
 	byte Fahrstufe;	//Standard für Fahrstufe
 	byte MAX485_CONTROL; //Port for send or receive control
 	uint8_t XNetAdr;	//Adresse des Abzufragenden XNet Device
-	unsigned long XSendCount;	//Zeit: Call Byte ausgesendet
-	byte XNetMsgCallByte;	//Received CallByte for Msg
-	byte XNetMsg[XNetMaxDataLength];	//Serial receive (Length, Header, Data1 to Data7)
-	byte XNetMsgBuffer[XNetMaxDataLength + 1];	//Read Buffer
+	unsigned long XSendCount;	//Zeit: Call Byte ausgesendet, data received
+	
+	XNetBuffer XNetRXBuffer;	//Read Buffer
 
 	byte callByteParity (byte me);	// calculate the parity bit
 	uint8_t CallByteInquiry;
@@ -208,7 +213,8 @@ class XpressNetMasterClass
 	uint16_t SlotLokUse[32];	//store loco to DirectedOps
 	void SetBusy(uint8_t Slot);	//send busy message to slot that doesn't use
 	void AddBusySlot(uint8_t UserOps, uint16_t Adr);	//add loco to slot
-	void XNetclear(void);	//Clear a old Message
+	
+	void XNetRXclear(uint8_t b);	//Clear a spezial RX Message
 
 		//Functions:
 	void unknown(void);		//unbekannte Anfrage
@@ -217,25 +223,21 @@ class XpressNetMasterClass
 	void XNetAnalyseReceived(void);		//work on received data
 	
 		//Serial send and receive:
+	#if defined(__AVR__)	
 	static XpressNetMasterClass *active_object;	//aktuelle aktive Object for interrupt handler	
-	XSend XNetBuffer[XNetBufferSize];		//Sendbuffer for data that needs to send out
-	byte XNetBufferSend;	//position to read next data
-	byte XNetBufferSend_data;	//position of byte we are sending
-	byte XNetBufferStore;	//position to store the next data
+	#endif
+	
+	XNetBuffer XNetTXBuffer;
 		
    	void XNetsend(byte *dataString, byte byteCount);	//Sende Datenarray out NOW!
 	uint16_t XNetReadBuffer(void);	//read out next Buffer Data
 	void getXOR (uint8_t *data, byte length); // calculate the XOR
-	void XNetSendNext(void);	//Sendet Daten aus dem Buffer mittels Interrupt
+	void XNetSendData(void);	//Sendet Daten aus dem Buffer mittels Interrupt
+	void XNetSendNext(void);	//Recursives sende weiterer Daten aus dem Buffer
 	void XNetReceive(void);	//Speichern der eingelesenen Daten
-	bool XNetDataReady;		//Daten Fertig empfangen!
 	
 	uint16_t XNetCVAdr;		//CV Adr that was read
 	uint8_t XNetCVvalue;	//read CV Value 
-	
-	#if defined(ESP32)
-	RS485SoftwareSerial rs485;
-	#endif
 };
 
 #if defined (__cplusplus)
