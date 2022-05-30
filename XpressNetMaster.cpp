@@ -48,7 +48,7 @@ XpressNetMasterClass::XpressNetMasterClass()
 	XNetSlaveMode = 0xFF;	//Start in SLAVE MODE
 	XNetSlaveInit = 0;		//for init state in Slave Mode
 	XModeAuto = true;		//Automatische Umschaltung Master/Slave Mode aktiv
-	Railpower = csTrackVoltageOff;
+	Railpower = csNormal;
 	Fahrstufe = Loco128;
 	
 	for (byte s = 0; s < 32; s++) { //clear busy slots
@@ -154,8 +154,10 @@ void XpressNetMasterClass::setup(uint8_t FStufen, uint8_t  XControl, bool XnMode
 
 //*******************************************************************************************
 //Daten Auswerten
-void XpressNetMasterClass::update(void) 
+bool XpressNetMasterClass::update(void) 
 {
+	bool status = false; 		//nothing to do!
+	
 	#if defined(ESP8266) || defined(ESP32)
 	//Check if we have data available for receive:
 	XNetReceive();	
@@ -163,6 +165,7 @@ void XpressNetMasterClass::update(void)
 	
 	//check if have some receive data in our buffer to decode:
 	if (XNetRXBuffer.get != XNetRXBuffer.put) {
+			status = true;		//work on a packet!
 			#if defined (XNetDEBUGTime)
 			XNetSerial.print(XNetRXBuffer.put);
 			XNetSerial.print("r");
@@ -185,18 +188,15 @@ void XpressNetMasterClass::update(void)
 			
 			if (XNetSlaveMode == 0x00) {		//MASTER MODE
 				XNetSendData();	//start sending an answer
-				
+		
 				//Start next Transmission Window direct after receive!
 				getNextXNetAdr();	//Send next CallByte
 				XNetSendData();	//start sending out by interrupt
 				XSendCount = micros(); //save time last Data on Bus!
 				XNetSlaveInit = 0;	//reset the init prozess for slave Mode
-			}
+			
+		}
 	}
-	
-	//count cycles that we run in SLAVE MODE
-	//if (XModeAuto && (XNetSlaveMode > 0))
-//		XNetSlaveMode--;	//stay only in SLAVE MODE if we receive CallBytes
 	
 	if (XNetSlaveMode == 0x00) {		//MASTER MODE
 		if (micros() - XSendCount >= XNetTransmissionWindow) {
@@ -209,7 +209,6 @@ void XpressNetMasterClass::update(void)
 	else {
 		if (XNetSlaveInit == 0) {
 				XNetSlaveInit = 1;
-				//uint8_t Init[] = { 0x00, 0x21, 0x24, 0x05 };	
 				uint8_t Init[] = { 0x00, 0x21, 0x21, 0x00 };	
 				XNetsend(Init, 4);	//send initsequence
 				#if defined (XNetDEBUG)
@@ -225,15 +224,18 @@ void XpressNetMasterClass::update(void)
 			if (XModeAuto && (XNetSlaveMode > 0))
 				XNetSlaveMode--;	//stay only in SLAVE MODE if we receive CallBytes
 		}
+		if (XNetTXBuffer.put != XNetTXBuffer.get)
+			status = true;
 	}
-	
+	return status;
 }
 
 //--------------------------------------------------------------------------------------------
 //Checks the XOR
 bool XpressNetMasterClass::XNetCheckXOR(void) {
-/*	
-	XNetSerial.print("msg: ");
+	/*
+	#if defined (XNetDEBUG)
+	XNetSerial.print("XRX: ");
 	XNetSerial.print((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader] & 0x0F) + 2);
 	for (byte i = 0; i < XNetRXBuffer.msg[XNetRXBuffer.get].length+1; i++) {
 		if (XNetRXBuffer.msg[XNetRXBuffer.get].data[i] < 0x10)
@@ -242,7 +244,8 @@ bool XpressNetMasterClass::XNetCheckXOR(void) {
 		XNetSerial.print(XNetRXBuffer.msg[XNetRXBuffer.get].data[i], HEX);
 	}
 	XNetSerial.println();
-*/	
+	#endif
+	*/
 	byte rxXOR = 0x00;			//store the read in XOR
 	for (byte i = 0; i < ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader] & 0x0F) + 2); i++) {
 		rxXOR = rxXOR ^ XNetRXBuffer.msg[XNetRXBuffer.get].data[i+1];	//jump over CallByte
@@ -315,10 +318,10 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 						XNetsend(sendVersion, 6);
 					}
 					if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x80 && XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] == 0xA1) {		//Alles Aus (Notaus)
-						setPower(csTrackVoltageOff);
+						Power(csTrackVoltageOff);
 					}
 					if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x81 && XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] == 0xA0) {		//Alles An
-						setPower(csNormal);
+						Power(csNormal);
 					}
 					if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x10 && XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] == 0x31) {	//Request for Service Mode results 
 						if (XNetCVAdr != 0) {
@@ -393,7 +396,7 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 				break; }
 			case 0x80:
 				if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x80) {		//EmStop
-					setPower(csEmergencyStop);
+					Power(csEmergencyStop);
 					break;
 				}
 				unknown(); //unbekannte Anfrage
@@ -603,16 +606,54 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 								XNetSlaveInit = 2;	//init Fertig!
 								//starte 2. Stufe
 								//Slave Init Softwareversion anfragen:
-								uint8_t commandVersionSequence[] = { 0x00, 0x21, 0x24, 0x05};
-								XNetsend (commandVersionSequence, 4);
+								getStatus();		//0x21, 0x24, 0x05
 							}
 						}
 						break;
 				case 0xE3:	//Antwort abgefrage Funktionen F13-F28
+						if (SlaveRequestLocoFkt != 0 && XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x52) {		//save Loco and KENNUNG
+							if (notifyXNetLocoFunc4)
+								notifyXNetLocoFunc4(SlaveRequestLocoFkt, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
+							if (notifyXNetLocoFunc5)
+								notifyXNetLocoFunc5(SlaveRequestLocoFkt, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]);
+							SlaveRequestLocoFkt = 0; 	//reset
+						}
 						break;
 				case 0xE4:	//Antwort der abgefragen Lok
+						if (SlaveRequestLocoInfo != 0) {		//save Loco
+							switch(XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1]) {		//KENNUNG
+								case 0x00: 	if (notifyXNetLocoDrive14)
+												notifyXNetLocoDrive14(SlaveRequestLocoInfo, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
+											break;	//14 steps
+								case 0x01: 	if (notifyXNetLocoDrive27)
+												notifyXNetLocoDrive27(SlaveRequestLocoInfo, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
+											break;	//17 steps			
+								case 0x02:	if (notifyXNetLocoDrive28)
+												notifyXNetLocoDrive28(SlaveRequestLocoInfo, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
+											break;	//28 steps
+								case 0x04:  if (notifyXNetLocoDrive128)
+												notifyXNetLocoDrive128(SlaveRequestLocoInfo, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
+											break;	//128 steps
+							}
+							if (notifyXNetLocoFunc1)
+								notifyXNetLocoFunc1(SlaveRequestLocoInfo, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]);
+							if (notifyXNetLocoFunc2)
+								notifyXNetLocoFunc2(SlaveRequestLocoInfo, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata4] & 0x0F);
+							if (notifyXNetLocoFunc3)
+								notifyXNetLocoFunc3(SlaveRequestLocoInfo, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata4] >> 4);
+							SlaveRequestLocoInfo = 0;		//reset
+						}
+						if (SlaveRequestLocoFkt != 0 && XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x51) {		//LENZ only F13-F28
+							if (notifyXNetLocoFunc4)
+								notifyXNetLocoFunc4(SlaveRequestLocoFkt, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
+							if (notifyXNetLocoFunc5)
+								notifyXNetLocoFunc5(SlaveRequestLocoFkt, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]);
+							SlaveRequestLocoFkt = 0; 	//reset
+						}
 						break;
 				case 0x42:	//Antwort Schaltinformation
+						if (notifyXNetTrnt)
+							notifyXNetTrnt((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] << 2) | ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] & B110) >> 1), XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
 						break;
 				case 0xE1:  //Err Lok control
 						break;
@@ -683,10 +724,21 @@ void XpressNetMasterClass::getNextXNetAdr(void)
 }
 
 //--------------------------------------------------------------------------------------------
+//Interner Power Zustand ändern
+void XpressNetMasterClass::Power(byte Power) {
+	if (Railpower != Power) {
+		setPower(Power);
+		if (XNetSlaveMode == 0x00) {	//MASTER MODE
+			if (notifyXNetPower)
+				notifyXNetPower(Railpower);
+		}
+	}
+}
+
+//--------------------------------------------------------------------------------------------
 //Zustand der Gleisversorgung setzten
 void XpressNetMasterClass::setPower(byte Power) 
-{	if (Railpower != Power) {
-	  switch (Power) {	
+{	switch (Power) {	
 	  case csNormal: {
 			if (XNetSlaveMode == 0x00) {		//MASTER MODE
 				uint8_t NormalPower[] = { GENERAL_BROADCAST, 0x61, 0x01, 0x60 };
@@ -736,13 +788,7 @@ void XpressNetMasterClass::setPower(byte Power)
 		}
 	  }
 	  
-	  Railpower = Power;	//Save new Power State
-	  
-	  if (XNetSlaveMode == 0x00) {	//MASTER MODE
-			if (notifyXNetPower)
-				notifyXNetPower(Railpower);
-	  }
-	}
+	Railpower = Power;	//Save new Power State
 }
 
 //--------------------------------------------------------------------------------------------
@@ -782,6 +828,13 @@ void XpressNetMasterClass::SetLocoBusy(uint8_t UserOps, uint16_t Adr) {
 }
 
 //--------------------------------------------------------------------------------------------
+//Zentralen Status an XNet abfragen
+void XpressNetMasterClass::getStatus() {
+	uint8_t commandVersionSequence[] = { 0x00, 0x21, 0x24, 0x05};
+	XNetsend (commandVersionSequence, 4);
+}
+
+//--------------------------------------------------------------------------------------------
 //Lokinfo an XNet abfragen
 void XpressNetMasterClass::getLocoInfo(uint16_t Adr) {
 	uint8_t LocoInfo[] = { 0x00, 0xE3, 0x00, 0x00, 0x00, 0x00 };
@@ -791,6 +844,20 @@ void XpressNetMasterClass::getLocoInfo(uint16_t Adr) {
 	LocoInfo[4] = Adr & 0xFF;
 	getXOR(LocoInfo, 6);
 	XNetsend(LocoInfo, 6);
+	SlaveRequestLocoInfo = Adr;		//save Loco
+}
+
+//--------------------------------------------------------------------------------------------
+//Lokfkt an XNet abfragen
+void XpressNetMasterClass::getLocoFkt(uint16_t Adr) {
+	uint8_t LocoInfo[] = { 0x00, 0xE3, 0x08, 0x00, 0x00, 0x00 };
+	if (Adr > 99) //Xpressnet long addresses (100 to 9999: AH/AL = 0xC064 to 0xE707)
+		LocoInfo[3] = (Adr >> 8) | 0xC0;
+	else LocoInfo[3] = Adr >> 8;   //short addresses (0 to 99: AH = 0x0000 and AL = 0x0000 to 0x0063)
+	LocoInfo[4] = Adr & 0xFF;
+	getXOR(LocoInfo, 6);
+	XNetsend(LocoInfo, 6);
+	SlaveRequestLocoFkt = Adr;		//save Loco
 }
 
 //--------------------------------------------------------------------------------------------
@@ -1012,6 +1079,17 @@ void XpressNetMasterClass::setCVReadValue(uint8_t cvAdr, uint8_t value) {
 void XpressNetMasterClass::setCVNack(void) {	
 	XNetCVAdr = 0;
 	XNetCVvalue = 0xFF;
+	uint8_t sendStatus[] = { DirectedOps, 0x61, 0x13, 0x72 };	//Programmierinfo „Daten nicht gefunden“
+	XNetsend(sendStatus, 4);
+}
+
+//--------------------------------------------------------------------------------------------
+//no ACK SC
+void XpressNetMasterClass::setCVNackSC(void) {	
+	XNetCVAdr = 0;
+	XNetCVvalue = 0xFF;
+	uint8_t sendStatus[] = { DirectedOps, 0x61, 0x12, 0x73 };	//Programmierinfo „Kurzschluss“
+	XNetsend(sendStatus, 4);
 }
 
 //--------------------------------------------------------------------------------------------
@@ -1175,7 +1253,7 @@ void XpressNetMasterClass::XNetSendData(void) {
 		if (data9 & 0x100) //is there a 9th bit?
 			XNetSwSerial.write(data9 & 0xFF, SWSERIAL_PARITY_MARK);	//parity bit set
 		else XNetSwSerial.write(data9 & 0xFF);
-		
+		/*
 		#if defined (XNetDEBUG)
 		//if (XNetSlaveMode != 0x00) {		//SLAVE MODE
 			XNetSerial.print(XNetRXBuffer.msg[XNetRXBuffer.put].data[XNetCallByte], HEX);
@@ -1184,7 +1262,7 @@ void XpressNetMasterClass::XNetSendData(void) {
 			XNetSerial.print(" ");
 		//}
 		#endif	
-			
+		*/	
 		//call ouself for the next byte:
 		XNetSendNext();
 	#endif
@@ -1347,13 +1425,13 @@ void XpressNetMasterClass::XNetReceive(void)
 	if (XNetRXBuffer.msg[XNetRXBuffer.put].length >= 2) { // header and one data byte or more received
 		//Check length - length is inside header but without header and xor!
 		if (((XNetRXBuffer.msg[XNetRXBuffer.put].data[XNetheader] & 0x0F) + 2 ) == XNetRXBuffer.msg[XNetRXBuffer.put].length) {	//reach defined data length + Header and CRC?
-		
+			/*
 			#if defined (XNetDEBUG)
 					XNetSerial.print(XNetRXBuffer.put);
 					XNetSerial.print(" New-");
 					XNetSerial.println(XNetRXBuffer.msg[XNetRXBuffer.put].data[XNetheader] & 0x0F);
 			#endif		
-		
+			*/
 			XNetRXBuffer.put++;	//next message data
 			if (XNetRXBuffer.put >= XNetBufferSize)	//at the end of the buffer?
 				XNetRXBuffer.put = 0;

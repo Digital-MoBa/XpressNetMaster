@@ -6,18 +6,38 @@
 #include <XpressNetMaster.h>
 XpressNetMasterClass XpressNet;
 
+unsigned long previousMillis = 0;  
+
+uint8_t speed = 0x80;
+
 void setup() {
   Serial.begin(115200);
   Serial.println("XPressNet Master");
 
+  #if defined(ESP8266)
+  XpressNet.setup(Loco128, D6, D0);    //Initialisierung XNet Serial, RX/TX-PIN, Send/Receive-PIN  
+  #else
   XpressNet.setup(Loco128, 9);    //Initialisierung XNet Serial und Send/Receive-PIN  
-  
+  #endif
+  XpressNet.setPower(0);
+  delay(5);
 }
 
 void loop() {
   
- XpressNet.update();	//call in every loop
- 
+  XpressNet.update();	//call in every loop
+
+  
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - previousMillis >= 1000) {
+    previousMillis = currentMillis;
+   // XpressNet.setSpeed(37, 0x04, speed);
+
+    //XpressNet.getLocoInfo(37);
+    //XpressNet.getLocoFkt(37);   //F13 - F28 => LENZ only!
+    speed++;
+  }
 }
 
 void notifyXNetgiveLocoInfo(uint8_t UserOps, uint16_t Address) {
@@ -33,7 +53,6 @@ void notifyXNetgiveLocoFunc(uint8_t UserOps, uint16_t Address) {
 void notifyXNetPower(uint8_t State) {
   Serial.print("Power: ");
   Serial.println(State, HEX);
-  XpressNet.setPower(State);
 }
 
 //--------------------------------------------------------------
@@ -100,12 +119,12 @@ void notifyXNetLocoFunc5(uint16_t Address, uint8_t Func5) {
   Serial.println(Func5, BIN);
 }
 void notifyXNetTrnt(uint16_t Address, uint8_t data) {
-  if (bitRead(data,3) == 0x01) {  //Weiche Aktiv == HIGH?
     Serial.print("XNet TA:");
     Serial.print(Address);
     Serial.print(", P:");
-    Serial.println(data & 0x01);
-  }
+    Serial.print(data & 0x01);
+    Serial.print(" - Aktiv=");
+    Serial.println(bitRead(data,3));
 }
 
 void notifyXNetTrntInfo(uint8_t UserOps, uint8_t Address, uint8_t data) {
@@ -120,6 +139,5 @@ void notifyXNetTrntInfo(uint8_t UserOps, uint8_t Address, uint8_t data) {
     bitWrite(pos, 2, 1);  
   else bitWrite(pos, 3, 1);    
 */  
-  XpressNet.SetTrntStatus(UserOps, Address, pos);
+//  XpressNet.SetTrntStatus(UserOps, Address, pos);
 }
-

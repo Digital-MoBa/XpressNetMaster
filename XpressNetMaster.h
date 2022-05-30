@@ -30,6 +30,7 @@
 	- fix Locomotive speed and direction operation (0xE4) Speed Steps
 	- fix range CV# Adr to uint16_t
 	- add software serial support for ESP8266 and ESP32
+	- add internal power function
 */
 
 // ensure this library description is only included once
@@ -157,7 +158,7 @@ class XpressNetMasterClass
 	#else
 	void setup(uint8_t FStufen, uint8_t XControl, bool XnModeAuto = true);  //Initialisierung Serial
 	#endif
-	void update(void);  			//Set new Data on the Dataline
+	bool update(void);  			//Set new Data on the Dataline
 	
 	bool getOperationModeMaster(void);	//gibt TRUE zurück wenn aktuelle Master Mode aktiv ist!
 
@@ -168,7 +169,9 @@ class XpressNetMasterClass
 	void ReqLocoBusy(uint16_t Adr);	//Lok Adresse besetzt melden
 	void SetLocoBusy(uint8_t UserOps, uint16_t Adr);	//Lok besetzt melden
 	
-	void getLocoInfo(uint16_t Adr);		//Slave Modus Lok informationen erfragen!
+	void getStatus();					//Staus der Zentrale erfragen
+	void getLocoInfo(uint16_t Adr);		//Slave Modus Lok Informationen erfragen!
+	void getLocoFkt(uint16_t Adr);		//Slave Modus Lok Funktionen erfragen!
 	
 	void SetLocoInfo(uint8_t UserOps, uint8_t Speed, uint8_t F0, uint8_t F1);	//Lokinfo an XNet Melden
 	void SetLocoInfo(uint8_t UserOps, uint8_t Steps, uint8_t Speed, uint8_t F0, uint8_t F1);	//Lokinfo an XNet Melden
@@ -186,6 +189,7 @@ class XpressNetMasterClass
 
 	void setCVReadValue(uint8_t cvAdr, uint8_t value);	//return a CV data read
 	void setCVNack(void);	//no ACK
+	void setCVNackSC(void); //no ACK Short Circuit
 	
 	// public only for easy access by interrupt handlers
 	static inline void handle_RX_interrupt();		//Serial RX Interrupt bearbeiten
@@ -204,6 +208,8 @@ class XpressNetMasterClass
 	unsigned long XSendCount;	//Zeit: Call Byte ausgesendet, data received
 	
 	XNetBuffer XNetRXBuffer;	//Read Buffer
+	
+	void Power(byte Power);		//internal power
 
 	byte callByteParity (byte me);	// calculate the parity bit
 	uint8_t CallByteInquiry;
@@ -238,6 +244,9 @@ class XpressNetMasterClass
 	
 	uint16_t XNetCVAdr;		//CV Adr that was read
 	uint8_t XNetCVvalue;	//read CV Value 
+	
+	uint16_t SlaveRequestLocoInfo = 0;		//Lok that we request for Lokdata
+	uint16_t SlaveRequestLocoFkt = 0;		//Lok that we request for Lok funktions
 };
 
 #if defined (__cplusplus)

@@ -14,8 +14,16 @@ SetLocoInfoMM				KEYWORD2
 SetFktStatus				KEYWORD2
 SetTrntStatus				KEYWORD2
 
+getStatus					KEYWORD2
+getLocoInfo					KEYWORD2
+getLocoFkt					KEYWORD2
+
 notifyXNetPower				KEYWORD2
 getPowerState				KEYWORD2
+
+setCVNack					KEYWORD2
+setCVNackSC					KEYWORD2
+setCVReadValue				KEYWORD2
 
 notifyXNetgiveLocoInfo			KEYWORD2
 notifyXNetgiveLocoMM			KEYWORD2
