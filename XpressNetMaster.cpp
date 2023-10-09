@@ -1,7 +1,7 @@
 /*
 *****************************************************************************
   *		XpressNetMaster.h - library for XpressNet protocoll
-  *		Copyright (c) 08/2016 - 2022 Philipp Gahtow  All right reserved.
+  *		Copyright (c) 08/2016 - 2023 Philipp Gahtow  All right reserved.
   *
 *****************************************************************************
   * FUNKTIONS:
@@ -45,7 +45,7 @@ XpressNetMasterClass::XpressNetMasterClass()
 {
 	// initialize this instance's variables 
 	XNetAdr = 0;	//Startaddresse des ersten XNet Device
-	XNetSlaveMode = 0xFF;	//Start in SLAVE MODE
+	XNetSlaveMode = 0;	//Start in MASTER MODE
 	XNetSlaveInit = 0;		//for init state in Slave Mode
 	XModeAuto = true;		//Automatische Umschaltung Master/Slave Mode aktiv
 	Railpower = csNormal;
@@ -134,16 +134,19 @@ void XpressNetMasterClass::setup(uint8_t FStufen, uint8_t  XControl, bool XnMode
 		while (1) { // Don't continue with invalid configuration
 		delay (1000);
 		}
-	} 
-	// high speed half duplex, turn off interrupts during tx
-	XNetSwSerial.enableIntTx(false);
+	}
 	
+	/* At high bitrates (115200bps) send bit timing can be improved at the expense of blocking concurrent full duplex receives, 
+	with the EspSoftwareSerial::UART::enableIntTx(false) function call.*/
+	XNetSwSerial.enableIntTx(true);	// high speed half duplex, don't turn off interrupts during tx!
+	
+/*	Remove to make the start up faster because of multiMaus V2-00!!!
 	//wait to make the library work before first messages will be send!
 	unsigned long time = micros();
 	while (micros() < (time + 4000)) {
 		update();
 	}
-
+*/
 #endif	 
 	 
 
@@ -180,6 +183,7 @@ bool XpressNetMasterClass::update(void)
 				#endif
 				XNetAnalyseReceived();	//Auswerten der empfangenen Daten
 			}
+						
 			XNetRXclear(XNetRXBuffer.get);	//alte Nachricht löschen
 			
 			XNetRXBuffer.get++;
@@ -199,7 +203,8 @@ bool XpressNetMasterClass::update(void)
 	}
 	
 	if (XNetSlaveMode == 0x00) {		//MASTER MODE
-		if (micros() - XSendCount >= XNetTransmissionWindow) {
+		if (  (micros() - XSendCount) > XNetTransmissionWindow) {
+			XNetRXclear(XNetRXBuffer.put);	//alte Nachricht löschen
 			getNextXNetAdr();	//Send next CallByte
 			XNetSendData();	//start sending out by interrupt
 			XSendCount = micros(); //save time last Data on Bus!
@@ -217,7 +222,7 @@ bool XpressNetMasterClass::update(void)
 				#endif
 			}
 		
-		if (micros() - XSendCount >= (2000)) {
+		if ((micros() - XSendCount) > 2000) {
 			//we need to initialize the SLAVE MODE?
 			
 			XSendCount = micros(); //save time last Data on Bus!
@@ -233,9 +238,18 @@ bool XpressNetMasterClass::update(void)
 //--------------------------------------------------------------------------------------------
 //Checks the XOR
 bool XpressNetMasterClass::XNetCheckXOR(void) {
-	/*
+	
+	byte rxXOR = 0x00;			//store the read in XOR
+	for (byte i = 0; i < ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader] & 0x0F) + 2); i++) {
+		rxXOR = rxXOR ^ XNetRXBuffer.msg[XNetRXBuffer.get].data[i+1];	//jump over CallByte
+	}
+	if (rxXOR == 0x00) {	//XOR is 0x00!
+		return true;
+	}
+	
+	
 	#if defined (XNetDEBUG)
-	XNetSerial.print("XRX: ");
+	XNetSerial.print(" XOR Fails: ");
 	XNetSerial.print((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader] & 0x0F) + 2);
 	for (byte i = 0; i < XNetRXBuffer.msg[XNetRXBuffer.get].length+1; i++) {
 		if (XNetRXBuffer.msg[XNetRXBuffer.get].data[i] < 0x10)
@@ -245,14 +259,8 @@ bool XpressNetMasterClass::XNetCheckXOR(void) {
 	}
 	XNetSerial.println();
 	#endif
-	*/
-	byte rxXOR = 0x00;			//store the read in XOR
-	for (byte i = 0; i < ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetheader] & 0x0F) + 2); i++) {
-		rxXOR = rxXOR ^ XNetRXBuffer.msg[XNetRXBuffer.get].data[i+1];	//jump over CallByte
-	}
-	if (rxXOR == 0x00) {	//XOR is 0x00!
-		return true;
-	}
+	
+	
 	//Übertragungsfehler:
 	if (XNetSlaveMode == 0x00) {		//MASTER MODE
 		uint8_t ERR[] = {DirectedOps, 0x61, 0x80, 0xE1 };	
@@ -318,10 +326,16 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 						XNetsend(sendVersion, 6);
 					}
 					if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x80 && XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] == 0xA1) {		//Alles Aus (Notaus)
-						Power(csTrackVoltageOff);
+						// Track power off
+						Railpower = csTrackVoltageOff;
+						if (notifyXNetPower)
+							notifyXNetPower(Railpower);
 					}
 					if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x81 && XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] == 0xA0) {		//Alles An
-						Power(csNormal);
+						// Normal Operation Resumed
+						Railpower = csNormal;
+						if (notifyXNetPower)
+							notifyXNetPower(Railpower);
 					}
 					if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x10 && XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] == 0x31) {	//Request for Service Mode results 
 						if (XNetCVAdr != 0) {
@@ -396,7 +410,10 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 				break; }
 			case 0x80:
 				if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x80) {		//EmStop
-					Power(csEmergencyStop);
+					//Emergency Stop
+					Railpower = csEmergencyStop;
+					if (notifyXNetPower)
+						notifyXNetPower(Railpower);
 					break;
 				}
 				unknown(); //unbekannte Anfrage
@@ -468,12 +485,32 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 				}
 				else if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x23 || XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0xF3) {	//Funktionsbefehl Gruppe4 F20-F13
 					//0xF3 = undocumented command is used when a mulitMAUS is controlling functions f20..f13. 
-					if (notifyXNetLocoFunc4)
-						notifyXNetLocoFunc4(word(XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] & 0x3F, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]), XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata4]);
+					if (notifyXNetLocoFuncX)
+						notifyXNetLocoFuncX(word(XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] & 0x3F, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]), 0x04, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata4]);
 				}
 				else if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x28) {	//Funktionsbefehl Gruppe5 F28-F21
-					if (notifyXNetLocoFunc5)
-						notifyXNetLocoFunc5(word(XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] & 0x3F, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]), XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata4]);
+					if (notifyXNetLocoFuncX)
+						notifyXNetLocoFuncX(word(XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] & 0x3F, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]), 0x05, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata4]);
+				}
+				else if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x29) {	//Funktionsbefehl Gruppe6 F36-F29
+					if (notifyXNetLocoFuncX)
+						notifyXNetLocoFuncX(word(XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] & 0x3F, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]), 0x06, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata4]);
+				}
+				else if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x2A) {	//Funktionsbefehl Gruppe7 F37-F44
+					if (notifyXNetLocoFuncX)
+						notifyXNetLocoFuncX(word(XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] & 0x3F, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]), 0x07, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata4]);
+				}
+				else if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x2B) {	//Funktionsbefehl Gruppe8 F45-F52
+					if (notifyXNetLocoFuncX)
+						notifyXNetLocoFuncX(word(XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] & 0x3F, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]), 0x08, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata4]);
+				}
+				else if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x50) {	//Funktionsbefehl Gruppe9 F53-F60
+					if (notifyXNetLocoFuncX)
+						notifyXNetLocoFuncX(word(XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] & 0x3F, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]), 0x09, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata4]);
+				}
+				else if (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x51) {	//Funktionsbefehl Gruppe10 F61-F68
+					if (notifyXNetLocoFuncX)
+						notifyXNetLocoFuncX(word(XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] & 0x3F, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]), 0x0A, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata4]);
 				}
 				else unknown(); //unbekannte Anfrage
 				/*
@@ -490,6 +527,10 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 					notifyXNetTrntInfo(DirectedOps, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1], XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
 				//XNetclear();	//alte Nachricht löschen
 				break;
+			case 0x43:	//Accessory Decoder >1024 information request
+				if (notifyXNetTrntInfo && XNetSlaveMode == 0x00)
+					notifyXNetTrntInfo(DirectedOps, (XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] << 8) | XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2], XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]);
+				break;
 			case 0x52:	//Accessory Decoder operation request
 				if (notifyXNetTrnt)
 					notifyXNetTrnt((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] << 2) | ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2] & B110) >> 1), XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
@@ -498,6 +539,10 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 					//BB = Adresse des Dekoderport 1..4
 					//P = Ausgang (Gerade = 0 / Abzweigen = 1)
 				//XNetclear();	//alte Nachricht löschen
+				break;
+			case 0x53:	//Accessory Decoder >1024 operation request ab Version 3.8
+				if (notifyXNetTrnt)
+					notifyXNetTrnt(( ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] << 8) | XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]) << 2) | ((XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3] & B110) >> 1), XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]);	
 				break;
 			default:  //Befehl in Zentrale nicht vorhanden
 				unknown(); //unbekannte Anfrage
@@ -612,10 +657,10 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 						break;
 				case 0xE3:	//Antwort abgefrage Funktionen F13-F28
 						if (SlaveRequestLocoFkt != 0 && XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x52) {		//save Loco and KENNUNG
-							if (notifyXNetLocoFunc4)
-								notifyXNetLocoFunc4(SlaveRequestLocoFkt, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
-							if (notifyXNetLocoFunc5)
-								notifyXNetLocoFunc5(SlaveRequestLocoFkt, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]);
+							if (notifyXNetLocoFuncX) {
+								notifyXNetLocoFuncX(SlaveRequestLocoFkt, 0x04, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
+								notifyXNetLocoFuncX(SlaveRequestLocoFkt, 0x05, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]);
+							}
 							SlaveRequestLocoFkt = 0; 	//reset
 						}
 						break;
@@ -644,10 +689,10 @@ void XpressNetMasterClass::XNetAnalyseReceived(void) {		//work on received data
 							SlaveRequestLocoInfo = 0;		//reset
 						}
 						if (SlaveRequestLocoFkt != 0 && XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata1] == 0x51) {		//LENZ only F13-F28
-							if (notifyXNetLocoFunc4)
-								notifyXNetLocoFunc4(SlaveRequestLocoFkt, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
-							if (notifyXNetLocoFunc5)
-								notifyXNetLocoFunc5(SlaveRequestLocoFkt, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]);
+							if (notifyXNetLocoFuncX) {
+								notifyXNetLocoFuncX(SlaveRequestLocoFkt, 0x04, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata2]);
+								notifyXNetLocoFuncX(SlaveRequestLocoFkt, 0x05, XNetRXBuffer.msg[XNetRXBuffer.get].data[XNetdata3]);
+							}
 							SlaveRequestLocoFkt = 0; 	//reset
 						}
 						break;
@@ -721,18 +766,6 @@ void XpressNetMasterClass::getNextXNetAdr(void)
 	
 	XNetRXBuffer.msg[XNetRXBuffer.put].length = 0;	//clear - only for sync!
 	XNetRXBuffer.msg[XNetRXBuffer.put].data[XNetCallByte] = CallByteInquiry;	//add CallByte to RX because we are Master
-}
-
-//--------------------------------------------------------------------------------------------
-//Interner Power Zustand ändern
-void XpressNetMasterClass::Power(byte Power) {
-	if (Railpower != Power) {
-		setPower(Power);
-		if (XNetSlaveMode == 0x00) {	//MASTER MODE
-			if (notifyXNetPower)
-				notifyXNetPower(Railpower);
-		}
-	}
 }
 
 //--------------------------------------------------------------------------------------------
@@ -1029,7 +1062,7 @@ void XpressNetMasterClass::AddBusySlot(uint8_t UserOps, uint16_t Adr) {
 
 //--------------------------------------------------------------------------------------------
 //TrntPos request return
-void XpressNetMasterClass::SetTrntStatus(uint8_t UserOps, uint8_t Address, uint8_t Data) {
+void XpressNetMasterClass::SetTrntStatus(uint8_t UserOps, uint16_t Address, uint8_t Data) {
 	if (XNetSlaveMode == 0x00) {		//MASTER MODE
 		// data=ITTN ZZZZ	Z=Weichenausgang1+2 (Aktive/Inaktive);
 		//0x42 AAAA AAAA ITTN ZZZZ
@@ -1037,11 +1070,21 @@ void XpressNetMasterClass::SetTrntStatus(uint8_t UserOps, uint8_t Address, uint8
 		//TT = turnout group (0-3)
 		//N = N=0 is the lower nibble, N=1 the upper nibble
 		//Z3 Z2 Z1 Z0 = (Z1,Z0|Z3,Z2) 01 "left", 10 "right"
-		uint8_t TrntInfo[] = {UserOps, 0x42, 0x00, 0x00, 0x00 };
-		TrntInfo[2] = Address;
-		TrntInfo[3] = Data;
-		getXOR(TrntInfo, 5);
-		XNetsend(TrntInfo, 5);
+		if ((Address >> 8) > 0) {
+			uint8_t TrntInfo[] = {UserOps, 0x43, 0x00, 0x00, 0x00, 0x00 };
+			TrntInfo[2] = Address >> 8;
+			TrntInfo[3] = Address & 0xFF;
+			TrntInfo[4] = Data;
+			getXOR(TrntInfo, 6);
+			XNetsend(TrntInfo, 6);
+		}
+		else {
+			uint8_t TrntInfo[] = {UserOps, 0x42, 0x00, 0x00, 0x00 };
+			TrntInfo[2] = Address;
+			TrntInfo[3] = Data;
+			getXOR(TrntInfo, 5);
+			XNetsend(TrntInfo, 5);
+		}
 	}
 }
 
@@ -1251,7 +1294,7 @@ void XpressNetMasterClass::XNetSendData(void) {
 		XNetSwSerial.enableTx(true);
 
 		if (data9 & 0x100) //is there a 9th bit?
-			XNetSwSerial.write(data9 & 0xFF, SWSERIAL_PARITY_MARK);	//parity bit set
+			XNetSwSerial.write(data9 & 0xFF, PARITY_MARK); //parity bit set
 		else XNetSwSerial.write(data9 & 0xFF);
 		/*
 		#if defined (XNetDEBUG)

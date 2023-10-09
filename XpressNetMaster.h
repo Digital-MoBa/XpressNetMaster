@@ -1,9 +1,9 @@
 /*
   XpressNetMaster.h - library for XpressNet Master protocoll
-  Copyright (c) 2022 Philipp Gahtow  All right reserved.
+  Copyright (c) 2023 Philipp Gahtow  All right reserved.
 
   Notice:
-  Support for XPressNet Version 3.0 or 3.6!
+  Support for XPressNet v4.1
 
   Change History:
 	- timing issue when change to the next slot
@@ -31,6 +31,9 @@
 	- fix range CV# Adr to uint16_t
 	- add software serial support for ESP8266 and ESP32
 	- add internal power function
+	- add support for XpressNet v4.0 with switch up to 2048
+	- fix SWSERIAL_PARITY_MARK to PARITY_MARK because they change the name!
+	- remove blocking Interrups while tx on ESP8266 and ESP32
 */
 
 // ensure this library description is only included once
@@ -38,12 +41,8 @@
 #define XpressNetMaster_h
 
 //CONFIG:
-#define XNetVersion 0x36	//System Bus Version
-#define XNetID 0x10	//Zentrale: 
-//0x00 = LZ100; 
-//0x01 = LH200; 
-//0x10 = ROCO MultiMaus; 
-//0x02 = other; 
+#define XNetVersion 0x40	//System Bus Version
+#define XNetID 0x10			//Zentrale: 0x00 = LZ100; 0x01 = LH200; 0x10 = ROCO MultiMaus; 0x02 = other; 
 
 // include types & constants of Wiring core API
 #if defined(WIRING)
@@ -77,7 +76,6 @@
 
 
 //--------------------------------------------------------------------------------------------
-#define XNetTimeUntilNext 550	//value in microseconds until the next transmission windows starts!
 /*An XpressNet device designed to work with XpressNet V3 and later systems must be designed so that it 
 begins its transmission within 110 microseconds of receiving its transmission window.  (older X-Bus 
 based systems required this transmission to begin with in 40 microseconds.)  Command stations must be 
@@ -177,7 +175,7 @@ class XpressNetMasterClass
 	void SetLocoInfo(uint8_t UserOps, uint8_t Steps, uint8_t Speed, uint8_t F0, uint8_t F1);	//Lokinfo an XNet Melden
 	void SetFktStatus(uint8_t UserOps, uint8_t F4, uint8_t F5);	//LokFkt an XNet Melden
 	void SetLocoInfoMM(uint8_t UserOps, uint8_t Steps, uint8_t Speed, uint8_t F0, uint8_t F1, uint8_t F2, uint8_t F3);
-	void SetTrntStatus(uint8_t UserOps, uint8_t Address, uint8_t Data); // data=0000 00AA	A=Weichenausgang1+2 (Aktive/Inaktive);
+	void SetTrntStatus(uint8_t UserOps, uint16_t Address, uint8_t Data); // data=0000 00AA	A=Weichenausgang1+2 (Aktive/Inaktive);
 	void SetTrntPos(uint16_t Address, uint8_t state, uint8_t active);	//Änderung der Weichenlage
 
 	void setSpeed(uint16_t Adr, uint8_t Steps, uint8_t Speed);
@@ -209,8 +207,6 @@ class XpressNetMasterClass
 	
 	XNetBuffer XNetRXBuffer;	//Read Buffer
 	
-	void Power(byte Power);		//internal power
-
 	byte callByteParity (byte me);	// calculate the parity bit
 	uint8_t CallByteInquiry;
 	uint8_t RequestAck;
@@ -265,10 +261,9 @@ class XpressNetMasterClass
 	extern void notifyXNetLocoFunc1(uint16_t Address, uint8_t Func1) __attribute__((weak));//Gruppe1 0 0 0 F0 F4 F3 F2 F1
 	extern void notifyXNetLocoFunc2(uint16_t Address, uint8_t Func2) __attribute__((weak));//Gruppe2 0000 F8 F7 F6 F5
 	extern void notifyXNetLocoFunc3(uint16_t Address, uint8_t Func3) __attribute__((weak));//Gruppe3 0000 F12 F11 F10 F9
-	extern void notifyXNetLocoFunc4(uint16_t Address, uint8_t Func4) __attribute__((weak));//Gruppe4 F20-F13
-	extern void notifyXNetLocoFunc5(uint16_t Address, uint8_t Func5) __attribute__((weak));//Gruppe5 F28-F21
+	extern void notifyXNetLocoFuncX(uint16_t Address, uint8_t group, uint8_t Func) __attribute__((weak));//Gruppe4 F20-F13, Gruppe5 F28-F21, .....
 	//Weichenbefehl:
-	extern void notifyXNetTrntInfo(uint8_t UserOps, uint8_t Address, uint8_t data) __attribute__((weak));// data=0000 000N	N=Nibble N0-(0,1); N1-(2,3);
+	extern void notifyXNetTrntInfo(uint8_t UserOps, uint16_t Address, uint8_t data) __attribute__((weak));// data=0000 000N	N=Nibble N0-(0,1); N1-(2,3);
 	extern void notifyXNetTrnt(uint16_t Address, uint8_t data) __attribute__((weak));// data=0000 000A	A=Weichenausgang (Aktive/Inaktive);
 	//Rückmeldung:
 	extern void notifyXNetFeedback(uint16_t Address, uint8_t data) __attribute__((weak));// data=0000 000A	A=Weichenausgang (Aktive/Inaktive);
